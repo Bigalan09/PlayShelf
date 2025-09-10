@@ -1,0 +1,57 @@
+{
+  "name": "PlayShelf Full Stack Development",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "frontend",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode",
+        "ms-vscode.eslint",
+        "bradlc.vscode-tailwindcss",
+        "formulahendry.auto-rename-tag",
+        "christian-kohler.path-intellisense",
+        "ms-azuretools.vscode-docker",
+        "ckolkman.vscode-postgres",
+        "humao.rest-client"
+      ],
+      "settings": {
+        "typescript.preferences.importModuleSpecifier": "relative",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": true
+        }
+      }
+    }
+  },
+  
+  "forwardPorts": [3001, 5432, 6379, 5173],
+  "portsAttributes": {
+    "3001": {
+      "label": "Backend API",
+      "protocol": "http"
+    },
+    "5432": {
+      "label": "PostgreSQL",
+      "protocol": "tcp"
+    },
+    "6379": {
+      "label": "Redis",
+      "protocol": "tcp"
+    },
+    "5173": {
+      "label": "Frontend Dev Server",
+      "protocol": "http"
+    }
+  },
+  
+  "postCreateCommand": "sudo chown -R node:node /app && npm install",
+  "postStartCommand": "npm run dev",
+  
+  "remoteUser": "node",
+  "containerUser": "node"
+}

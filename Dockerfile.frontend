@@ -1,0 +1,29 @@
+# Frontend Development Dockerfile
+FROM node:20-alpine
+
+# Add sudo for development container compatibility
+RUN apk add --no-cache sudo
+RUN echo 'node ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+WORKDIR /app
+
+# Set ownership and copy package files
+COPY --chown=node:node package*.json ./
+
+# Switch to node user
+USER node
+
+# Install dependencies
+RUN npm install
+
+# Install global dependencies
+RUN npm install -g vite
+
+# Copy source code with proper ownership
+COPY --chown=node:node . .
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Start development server
+CMD ["npm", "run", "dev"]
