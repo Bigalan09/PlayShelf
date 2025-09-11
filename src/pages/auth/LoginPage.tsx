@@ -1,43 +1,190 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Dice6, Mail, Lock, Eye, EyeOff } from 'lucide-react'
+import React, { useState } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Dice6, Mail, Lock, Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { AuthService } from '../../services/authService'
+import { useNotification } from '../../contexts/NotificationContext'
+import { isNetworkError, getNetworkErrorDetails, retryWithBackoff } from '../../utils/networkErrorHandler'
+import { ButtonLoader } from '../../components/common/GlobalLoader'
+import { useGuestOnly, useAuthRedirect } from '../../hooks/useAuthHooks'
+import { useAuth, useAuthStatus } from '../../contexts/AuthContext'
 
 const LoginPage = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { success, error: showError } = useNotification()
+  const { redirectAfterLogin } = useAuthRedirect()
+  const { login: authLogin } = useAuth()
+  const { isAuthenticated, isInitialized } = useAuthStatus()
+  
+  // Automatically redirect authenticated users
+  const guestOnlyResult = useGuestOnly()
+  
+  // Debug logging for authentication state changes
+  React.useEffect(() => {
+    console.log('🔐 LoginPage auth state changed:', {
+      isAuthenticated,
+      isInitialized,
+      pathname: location.pathname,
+      showContent: guestOnlyResult?.showContent
+    })
+  }, [isAuthenticated, isInitialized, location.pathname, guestOnlyResult])
+  
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
     email: '',
-    password: ''
+    password: '',
+    rememberMe: false
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isLoading, setIsLoading] = useState(false)
+  const [generalError, setGeneralError] = useState('')
+  const [retryAttempt, setRetryAttempt] = useState(0)
 
-  const handleSubmit = (e: React.FormEvent) => {
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Mock validation
+    
+    // Clear previous errors
+    setErrors({})
+    setGeneralError('')
+    
+    // Basic client-side validation
     const newErrors: Record<string, string> = {}
     if (!formData.email) newErrors.email = 'Email is required'
     if (!formData.password) newErrors.password = 'Password is required'
 
-    if (Object.keys(newErrors).length === 0) {
-      // Mock login success
-      console.log('Login attempt:', formData)
-      navigate('/dashboard')
-    } else {
+    if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      console.log('🔐 Starting login process with AuthContext only')
+      
+      // Use AuthContext login method with retry mechanism
+      const loginWithRetry = async () => {
+        return await authLogin({
+          email: formData.email,
+          password: formData.password,
+          rememberMe: formData.rememberMe
+        })
+      }
+      
+      await retryWithBackoff(loginWithRetry, {
+        maxAttempts: 3,
+        delay: 1000,
+        onRetry: (attempt) => {
+          setRetryAttempt(attempt)
+          showError({
+            title: 'Connection Issue',
+            message: `Retrying login attempt ${attempt}/3...`,
+            duration: 2000,
+          })
+        }
+      })
+      
+      console.log('🔐 AuthContext login completed successfully')
+      
+      // Show success notification
+      success({
+        title: 'Login Successful',
+        message: `Welcome back!`,
+        duration: 3000,
+      })
+      
+      // Let useGuestOnly handle the redirect - no manual redirect needed
+      console.log('🔐 Login successful, letting useGuestOnly handle redirect')
+    } catch (error) {
+      console.error('Login error:', error)
+      setRetryAttempt(0)
+      
+      // Handle network errors with detailed feedback
+      if (isNetworkError(error)) {
+        const errorDetails = getNetworkErrorDetails(error)
+        setGeneralError(errorDetails.userMessage)
+        
+        // Show toast notification for network errors
+        showError({
+          title: 'Connection Error',
+          message: errorDetails.userMessage,
+          duration: 8000,
+          action: errorDetails.canRetry ? {
+            label: 'Retry',
+            onClick: () => handleSubmit(e),
+          } : undefined,
+        })
+      } else if (AuthService.isValidationError(error)) {
+        // Handle field-specific validation errors
+        if (error.field) {
+          setErrors({ [error.field]: error.message })
+        } else {
+          setGeneralError(error.message)
+        }
+      } else if (AuthService.isAuthServiceError(error)) {
+        setGeneralError(error.message)
+        
+        // Show specific error notifications
+        if (error.message.includes('Invalid credentials') || error.message.includes('password')) {
+          showError({
+            title: 'Login Failed',
+            message: 'Please check your email and password and try again.',
+            duration: 6000,
+          })
+        } else if (error.code === 'RATE_LIMITED' || error.statusCode === 429) {
+          // Extract wait time from error message if available
+          const waitTimeMatch = error.message.match(/wait (\d+) seconds?/);
+          const waitTime = waitTimeMatch ? parseInt(waitTimeMatch[1], 10) : null;
+          
+          showError({
+            title: 'Too Many Attempts',
+            message: error.message,
+            duration: waitTime ? Math.max(waitTime * 1000, 10000) : 15000,
+            action: waitTime && waitTime < 60 ? {
+              label: `Retry in ${waitTime}s`,
+              onClick: () => {
+                setTimeout(() => {
+                  const submitButton = document.querySelector('button[type="submit"]') as HTMLButtonElement;
+                  if (submitButton && !submitButton.disabled) {
+                    submitButton.click();
+                  }
+                }, waitTime * 1000);
+              },
+            } : undefined,
+          })
+        }
+      } else {
+        const errorMessage = 'An unexpected error occurred. Please try again.'
+        setGeneralError(errorMessage)
+        showError({
+          title: 'Login Error',
+          message: errorMessage,
+          duration: 5000,
+        })
+      }
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target
+    
     setFormData(prev => ({
       ...prev,
-      [e.target.name]: e.target.value
+      [name]: type === 'checkbox' ? checked : value
     }))
-    // Clear error for this field
-    if (errors[e.target.name]) {
+    
+    // Clear error for this field and general error
+    if (errors[name]) {
       setErrors(prev => ({
         ...prev,
-        [e.target.name]: ''
+        [name]: ''
       }))
+    }
+    if (generalError) {
+      setGeneralError('')
     }
   }
 
@@ -56,6 +203,23 @@ const LoginPage = () => {
               Log in to manage your collection
             </p>
           </div>
+
+          {/* General Error */}
+          {generalError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start space-x-2">
+                <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm text-red-600">{generalError}</p>
+                  {retryAttempt > 0 && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Retry attempt: {retryAttempt}/3
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -129,8 +293,10 @@ const LoginPage = () => {
               <div className="flex items-center">
                 <input
                   id="remember-me"
-                  name="remember-me"
+                  name="rememberMe"
                   type="checkbox"
+                  checked={formData.rememberMe}
+                  onChange={handleChange}
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
@@ -145,9 +311,22 @@ const LoginPage = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+              disabled={isLoading}
+              className={`w-full flex justify-center items-center space-x-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 ${
+                isLoading 
+                  ? 'bg-primary-400 cursor-not-allowed' 
+                  : 'bg-primary-600 hover:bg-primary-700'
+              }`}
             >
-              Log in
+              {isLoading && <ButtonLoader className="text-white" />}
+              <span>
+                {isLoading 
+                  ? retryAttempt > 0 
+                    ? `Retrying... (${retryAttempt}/3)`
+                    : 'Logging in...' 
+                  : 'Log in'
+                }
+              </span>
             </button>
           </form>
 

@@ -3,14 +3,53 @@ import { RateLimiterMemory, RateLimiterRedis } from 'rate-limiter-flexible';
 import { config } from '../config/index.js';
 import { logSecurity } from '../utils/logger.js';
 
-// Rate limiter configurations for different auth endpoints
-const rateLimiterConfigs: Record<string, {
-  keyGenerator: (req: Request) => string;
-  points: number;
-  duration: number;
-  blockDuration: number;
-  execEvenly: boolean;
-}> = {
+// Development vs Production rate limiter configurations
+const getDevRateLimiterConfig = () => ({
+  login: {
+    keyGenerator: (req: Request) => `login_${req.ip}`,
+    points: 50, // 50 attempts (10x increase)
+    duration: 900, // Per 15 minutes
+    blockDuration: 60, // Block for 1 minute (reduced)
+    execEvenly: true
+  },
+  loginEmail: {
+    keyGenerator: (req: Request) => `login_email_${req.body.email?.toLowerCase() || 'unknown'}`,
+    points: 20, // 20 attempts per email (6x increase)
+    duration: 900, // Per 15 minutes
+    blockDuration: 60, // Block for 1 minute (reduced)
+    execEvenly: true
+  },
+  register: {
+    keyGenerator: (req: Request) => `register_${req.ip}`,
+    points: 20, // 20 registrations (6x increase)
+    duration: 3600, // Per hour
+    blockDuration: 60, // Block for 1 minute (reduced)
+    execEvenly: true
+  },
+  forgotPassword: {
+    keyGenerator: (req: Request) => `forgot_${req.body.email?.toLowerCase() || req.ip}`,
+    points: 20, // 20 attempts (6x increase)
+    duration: 3600, // Per hour
+    blockDuration: 60, // Block for 1 minute (reduced)
+    execEvenly: true
+  },
+  resetPassword: {
+    keyGenerator: (req: Request) => `reset_${req.ip}`,
+    points: 30, // 30 attempts (6x increase)
+    duration: 3600, // Per hour
+    blockDuration: 60, // Block for 1 minute (reduced)
+    execEvenly: true
+  },
+  changePassword: {
+    keyGenerator: (req: Request) => `change_pwd_${req.ip}`,
+    points: 30, // 30 attempts (6x increase)
+    duration: 900, // Per 15 minutes
+    blockDuration: 60, // Block for 1 minute (reduced)
+    execEvenly: true
+  }
+});
+
+const getProdRateLimiterConfig = () => ({
   login: {
     keyGenerator: (req: Request) => `login_${req.ip}`,
     points: 5, // 5 attempts
@@ -53,7 +92,16 @@ const rateLimiterConfigs: Record<string, {
     blockDuration: 900, // Block for 15 minutes
     execEvenly: true
   }
-};
+});
+
+// Rate limiter configurations for different auth endpoints
+const rateLimiterConfigs: Record<string, {
+  keyGenerator: (req: Request) => string;
+  points: number;
+  duration: number;
+  blockDuration: number;
+  execEvenly: boolean;
+}> = config.server.nodeEnv === 'development' ? getDevRateLimiterConfig() : getProdRateLimiterConfig();
 
 // Create rate limiters
 const rateLimiters: { [key: string]: RateLimiterMemory } = {};

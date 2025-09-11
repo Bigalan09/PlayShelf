@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Dice6, Mail, Lock, Eye, EyeOff, User } from 'lucide-react'
+import { AuthService } from '../../services/authService'
 
 const SignupPage = () => {
   const navigate = useNavigate()
@@ -9,43 +10,104 @@ const SignupPage = () => {
   const [formData, setFormData] = useState({
     username: '',
     email: '',
+    firstName: '',
+    lastName: '',
     password: '',
     confirmPassword: ''
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isLoading, setIsLoading] = useState(false)
+  const [generalError, setGeneralError] = useState('')
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Mock validation
+    
+    // Clear previous errors
+    setErrors({})
+    setGeneralError('')
+    
+    // Basic client-side validation
     const newErrors: Record<string, string> = {}
     if (!formData.username) newErrors.username = 'Username is required'
     if (!formData.email) newErrors.email = 'Email is required'
+    if (!formData.firstName) newErrors.firstName = 'First name is required'
+    if (!formData.lastName) newErrors.lastName = 'Last name is required'
     if (!formData.password) newErrors.password = 'Password is required'
     if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters'
     if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match'
     }
+    if (!agreedToTerms) {
+      newErrors.terms = 'You must agree to the Terms of Service and Privacy Policy'
+    }
 
-    if (Object.keys(newErrors).length === 0) {
-      // Mock signup success
-      console.log('Signup attempt:', formData)
-      navigate('/auth/login')
-    } else {
+    if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const { user, tokens } = await AuthService.register({
+        email: formData.email,
+        username: formData.username,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword
+      })
+      
+      console.log('Registration successful:', { user: user.email, hasTokens: !!tokens.accessToken })
+      
+      // Navigate to login page on successful registration
+      navigate('/auth/login', { 
+        state: { message: 'Registration successful! Please log in with your new account.' }
+      })
+    } catch (error) {
+      console.error('Registration error:', error)
+      
+      if (AuthService.isValidationError(error)) {
+        // Handle field-specific validation errors
+        if (error.field) {
+          setErrors({ [error.field]: error.message })
+        } else {
+          setGeneralError(error.message)
+        }
+      } else if (AuthService.isNetworkError(error)) {
+        setGeneralError(error.message)
+      } else if (AuthService.isAuthServiceError(error)) {
+        setGeneralError(error.message)
+      } else {
+        setGeneralError('An unexpected error occurred. Please try again.')
+      }
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }))
-    // Clear error for this field
-    if (errors[e.target.name]) {
+    const { name, value, checked } = e.target
+    
+    if (name === 'terms') {
+      setAgreedToTerms(checked)
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }))
+    }
+    
+    // Clear error for this field and general error
+    if (errors[name]) {
       setErrors(prev => ({
         ...prev,
-        [e.target.name]: ''
+        [name]: ''
       }))
+    }
+    if (generalError) {
+      setGeneralError('')
     }
   }
 
@@ -65,8 +127,70 @@ const SignupPage = () => {
             </p>
           </div>
 
+          {/* General Error */}
+          {generalError && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-600">{generalError}</p>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* First Name and Last Name Fields */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
+                  First name
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="firstName"
+                    name="firstName"
+                    type="text"
+                    autoComplete="given-name"
+                    value={formData.firstName}
+                    onChange={handleChange}
+                    className={`block w-full pl-10 pr-3 py-2 border ${
+                      errors.firstName ? 'border-red-500' : 'border-gray-300'
+                    } rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors`}
+                    placeholder="John"
+                  />
+                </div>
+                {errors.firstName && (
+                  <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
+                  Last name
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    autoComplete="family-name"
+                    value={formData.lastName}
+                    onChange={handleChange}
+                    className={`block w-full pl-10 pr-3 py-2 border ${
+                      errors.lastName ? 'border-red-500' : 'border-gray-300'
+                    } rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors`}
+                    placeholder="Doe"
+                  />
+                </div>
+                {errors.lastName && (
+                  <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>
+                )}
+              </div>
+            </div>
+
             {/* Username Field */}
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
@@ -204,6 +328,8 @@ const SignupPage = () => {
                 id="terms"
                 name="terms"
                 type="checkbox"
+                checked={agreedToTerms}
+                onChange={handleChange}
                 className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
               />
               <label htmlFor="terms" className="ml-2 block text-sm text-gray-700">
@@ -217,13 +343,21 @@ const SignupPage = () => {
                 </a>
               </label>
             </div>
+            {errors.terms && (
+              <p className="mt-1 text-sm text-red-600">{errors.terms}</p>
+            )}
 
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+              disabled={isLoading}
+              className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 ${
+                isLoading 
+                  ? 'bg-primary-400 cursor-not-allowed' 
+                  : 'bg-primary-600 hover:bg-primary-700'
+              }`}
             >
-              Create account
+              {isLoading ? 'Creating account...' : 'Create account'}
             </button>
           </form>
 

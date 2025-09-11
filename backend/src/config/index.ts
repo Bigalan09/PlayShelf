@@ -45,7 +45,7 @@ const configSchema = z.object({
     allowedTypes: z.array(z.string()),
   }),
   security: z.object({
-    bcryptRounds: z.number().min(10).max(15),
+    bcryptRounds: z.number().min(4).max(15),
     sessionSecret: z.string().min(32),
   }),
 });
@@ -91,7 +91,7 @@ const rawConfig = {
     allowedTypes: (process.env.ALLOWED_FILE_TYPES || 'jpg,jpeg,png,gif,webp').split(','),
   },
   security: {
-    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
+    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || (process.env.NODE_ENV === 'production' ? '12' : '4'), 10),
     sessionSecret: process.env.SESSION_SECRET || 'dev-session-secret-change-in-production-minimum-32-chars',
   },
 };

@@ -2,15 +2,23 @@ import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, X, User, Shield, Users as UsersIcon } from "lucide-react";
 import DiceIcon from "../common/DiceIcon";
+import { useAuth, useUserProfile, useUserSecurity, useUserPermissions } from "../../hooks/useAuthHooks";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
-  // Mock auth state - in real app this would come from auth context
-  const userRole = "guest"; // Can be: "guest", "member", "admin"
-  const isAuthenticated = userRole !== "guest";
-  const username = isAuthenticated ? "Player One" : null;
+  // Authentication state
+  const { isAuthenticated, isLoading } = useAuth();
+  const { getDisplayName } = useUserProfile();
+  const { forceLogout } = useUserSecurity();
+  const { isAdmin } = useUserPermissions();
+  
+  // Determine user role for existing component logic
+  const userRole: "guest" | "member" | "admin" = isAuthenticated 
+    ? (isAdmin ? "admin" : "member")
+    : "guest";
+  const username = isAuthenticated ? getDisplayName() : null;
 
   const navLinks = [
     { to: "/", label: "🏠 Home", color: "hover:text-game-purple", show: true },
@@ -21,6 +29,17 @@ const Navbar = () => {
       show: true,
     },
   ];
+
+  // Immediate logout handler
+  const handleLogout = async () => {
+    try {
+      await forceLogout();
+      setIsUserMenuOpen(false);
+      setIsMenuOpen(false);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
 
   const getRoleBadge = () => {
     switch (userRole) {
@@ -65,8 +84,8 @@ const Navbar = () => {
                 key={link.to}
                 to={link.to}
                 className={({ isActive }) =>
-                  `text-gray-700 ${link.color} transition-all duration-200 font-game font-medium text-lg transform hover:scale-110 ${
-                    isActive ? "text-primary-600 scale-110" : ""
+                  `text-gray-700 ${link.color} transition-all duration-200 font-game font-medium text-lg transform hover:scale-105 ${
+                    isActive ? "text-primary-600" : ""
                   }`
                 }
               >
@@ -78,8 +97,8 @@ const Navbar = () => {
               <NavLink
                 to="/dashboard"
                 className={({ isActive }) =>
-                  `text-gray-700 hover:text-game-green transition-all duration-200 font-game font-medium text-lg transform hover:scale-110 ${
-                    isActive ? "text-game-green scale-110" : ""
+                  `text-gray-700 hover:text-game-green transition-all duration-200 font-game font-medium text-lg transform hover:scale-105 ${
+                    isActive ? "text-game-green" : ""
                   }`
                 }
               >
@@ -92,8 +111,8 @@ const Navbar = () => {
                 <NavLink
                   to="/dashboard"
                   className={({ isActive }) =>
-                    `text-gray-700 hover:text-game-green transition-all duration-200 font-game font-medium text-lg transform hover:scale-110 ${
-                      isActive ? "text-game-green scale-110" : ""
+                    `text-gray-700 hover:text-game-green transition-all duration-200 font-game font-medium text-lg transform hover:scale-105 ${
+                      isActive ? "text-game-green" : ""
                     }`
                   }
                 >
@@ -102,8 +121,8 @@ const Navbar = () => {
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>
-                    `text-gray-700 hover:text-game-orange transition-all duration-200 font-game font-medium text-lg transform hover:scale-110 ${
-                      isActive ? "text-game-orange scale-110" : ""
+                    `text-gray-700 hover:text-game-orange transition-all duration-200 font-game font-medium text-lg transform hover:scale-105 ${
+                      isActive ? "text-game-orange" : ""
                     }`
                   }
                 >
@@ -115,10 +134,15 @@ const Navbar = () => {
 
           {/* User Menu */}
           <div className="hidden md:block relative">
-            {isAuthenticated ? (
+            {isLoading ? (
+              <div className="flex items-center space-x-2 text-gray-400">
+                <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+                <span className="font-game">Loading...</span>
+              </div>
+            ) : isAuthenticated ? (
               <button
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center space-x-2 text-gray-700 hover:text-primary-600 transition-all duration-200 font-game transform hover:scale-110"
+                className="flex items-center space-x-2 text-gray-700 hover:text-primary-600 transition-all duration-200 font-game transform hover:scale-105"
               >
                 <div className="w-8 h-8 bg-gradient-to-br from-game-purple to-game-pink rounded-full flex items-center justify-center">
                   {userRole === "admin" ? (
@@ -136,7 +160,7 @@ const Navbar = () => {
               <div className="flex items-center space-x-4">
                 <Link
                   to="/auth/login"
-                  className="text-gray-700 hover:text-primary-600 transition-all duration-200 font-game font-medium transform hover:scale-110"
+                  className="text-gray-700 hover:text-primary-600 transition-all duration-200 font-game font-medium transform hover:scale-105"
                 >
                   Log In
                 </Link>
@@ -151,7 +175,7 @@ const Navbar = () => {
 
             {/* Dropdown Menu */}
             {isUserMenuOpen && isAuthenticated && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl py-2 z-50 border-2 border-primary-200 animate-bounce-slow">
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl py-2 z-50 border-2 border-primary-200">
                 {userRole === "member" || userRole === "admin" ? (
                   <>
                     <Link
@@ -191,8 +215,8 @@ const Navbar = () => {
                   ⚙️ Settings
                 </Link>
                 <button
-                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-primary-50 font-game"
-                  onClick={() => setIsUserMenuOpen(false)}
+                  className="block w-full text-left px-4 py-2 text-sm font-game transition-colors text-gray-700 hover:bg-primary-50"
+                  onClick={handleLogout}
                 >
                   👋 Log Out
                 </button>
@@ -203,7 +227,7 @@ const Navbar = () => {
           {/* Mobile Menu Button */}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="md:hidden transform hover:scale-110 transition-transform"
+            className="md:hidden transform hover:scale-105 transition-transform"
           >
             {isMenuOpen ? (
               <X className="h-6 w-6 text-gray-700" />
@@ -253,13 +277,22 @@ const Navbar = () => {
               </NavLink>
             )}
 
-            {isAuthenticated ? (
+            {isLoading ? (
+              <div className="pt-4 text-center">
+                <div className="py-2 text-sm text-gray-400 font-game">
+                  Loading...
+                </div>
+              </div>
+            ) : isAuthenticated ? (
               <>
                 <hr className="my-2 border-primary-100" />
                 <div className="py-2 text-sm text-gray-500 font-game">
                   Logged in as {username} {getRoleBadge()}
                 </div>
-                <button className="block w-full text-left py-2 text-gray-700 hover:text-primary-600 transition-colors font-game">
+                <button 
+                  className="block w-full text-left py-2 font-game transition-colors text-gray-700 hover:text-primary-600"
+                  onClick={handleLogout}
+                >
                   👋 Log Out
                 </button>
               </>
